@@ -32,7 +32,8 @@ def main_menu():
     return InlineKeyboardMarkup(mainMenuButtons)
 def back_menu():
     backMenuButtons = [
-        [InlineKeyboardButton("မူလစာမျက်နှာသို့", callback_data="backButton")]
+        [InlineKeyboardButton("မူလစာမျက်နှာသို့", callback_data="backButton")],
+        [InlineKeyboardButton("အခြားစာမျက်နှာသို့", callback_data="newButton")]
     ]
     return InlineKeyboardMarkup(backMenuButtons)
 def fuel_prices_menu():
@@ -44,6 +45,7 @@ def fuel_prices_menu():
     backButton = InlineKeyboardButton("မူလစာမျက်နှာသို့", callback_data="backButton")
     markup.row(backButton)
     return markup
+
 def get_foreign_exchange_rates():
     url = os.getenv('FOREIGN_EXCHANGE_RATES_API_URL')
     try:
@@ -57,7 +59,7 @@ def get_foreign_exchange_rates():
         rates = data["rates"]
         USDToMMK = rates.get('MMK', 0)
         targets = ["USD", "EUR", "SGD", "MYR", "CNY", "THB", "JPY"]
-        bodyMessage = f"```text\nနိုင်ငံခြားငွေလဲလှယ်နှုန်းများ\n\n{'ငွေကြေး':<14} {'ဈေးနှုန်း'}\n{'-' * 23}\n"
+        bodyMessage = f"```text\nနိုင်ငံခြားငွေလဲလှယ်နှုန်းများ\n\n{'ငွေကြေး':<12} {'ဈေးနှုန်း'}\n{'-' * 20}\n"
 
         for target in targets:
             if target == "USD":
@@ -65,7 +67,7 @@ def get_foreign_exchange_rates():
             else:
                 rateInUSD = rates.get(target)
                 MMK = (USDToMMK / rateInUSD) if rateInUSD else 0
-            bodyMessage += f"{translator.get(target, target):<14} {MMK:,.2f}\n"
+            bodyMessage += f"{translator.get(target, target):<11} {MMK:,.2f}\n"
 
         bodyMessage += "```\n"
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -74,11 +76,12 @@ def get_foreign_exchange_rates():
 
     except requests.exceptions.RequestException:
         return "Error connecting to the Foreign Exchange Rates service."
+
 def get_fuel_prices(division):
     data = fetch_fuel_prices(division)
     message = "```text\n"
-    message += f"{translator.get(division, division)}\n\nစက်သုံးဆီဈေးနှုန်းများ\n{'-' * 25}\n"
-    message += f"{'Diesel':<20} {data['diesel']}\n{'Premium Diesel':<20} {data['premiumDiesel']}\n{'Octane 92':<20} {data['octane92']}\n{'Octane 95':<20} {data['octane95']}\n\n"
+    message += f"{translator.get(division, division)}\n\nစက်သုံးဆီဈေးနှုန်းများ\n{'-' * 23}\n"
+    message += f"{'Diesel':<18} {data['diesel']}\n{'Premium Diesel':<18} {data['premiumDiesel']}\n{'Octane 92':<18} {data['octane92']}\n{'Octane 95':<18} {data['octane95']}\n\n"
     message += "```\n"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return message + now
@@ -107,6 +110,34 @@ def fetch_fuel_prices(division):
         return data[division]
     except requests.exceptions.RequestException:
         return "Error connecting to the Fuel Prices service."
+
+def get_gold_prices():
+    url = os.getenv('GOLD_PRICES_API_URL')
+    try:
+        theadResponse = requests.get(url, impersonate="chrome", timeout=15)
+        theadSoup = BeautifulSoup(theadResponse.text, 'html.parser')
+        theadRow = theadSoup.find('thead', class_="table-header-colour")
+        theadCols = [td.next.strip() for td in theadRow.find_all('td')]
+
+        payload = {
+            "Category": "Gold Price", "Page": "1", "Language": "English"
+        }
+        tbodyResponse = requests.post("https://csostat.gov.mm/Statistics/GetMarketPriceByCategory", data=payload, impersonate="chrome", timeout=15)
+        tbodyResponse.raise_for_status()
+        tbodyData = tbodyResponse.json()
+        tbodySoup = BeautifulSoup(tbodyData, 'html.parser')
+        tbodyRow = tbodySoup.find('tr')
+        tbodyCols = [td.next.strip() for td in tbodyRow.find_all('td')]
+
+        message = "```text\n"
+        message += f"ရွှေဈေးနှုန်းများ\n\n{'ရက်စွဲ':<11} {'အခေါက်ရွှေ':<14} {'၁၅ပဲရည်'}\n{'-' * 33}\n"
+        for i, col in enumerate(tbodyCols[:1:-1]):
+            message += f"{"-".join(theadCols[:1:-1][i].split("-")[:-1]):<9} {int(col):<13,.0f} {(int(col) * (15 / 16)):,.0f}\n"
+        message += "```\n"
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return message + now
+    except requests.exceptions.RequestException:
+        return "Error connecting to the Gold Prices service."
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
@@ -141,12 +172,36 @@ def handle_query(call):
             parse_mode="Markdown",
             reply_markup=back_menu()
         )
+    elif call.data == "goldPricesButton":
+        bot.answer_callback_query(call.id, text="Fetching the Gold Prices data")
+        message = get_gold_prices()
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=back_menu()
+        )
     elif call.data == "backButton":
         bot.answer_callback_query(call.id, text=f"Going back to the Main Menu")
         message = "သိလိုသည့် အမျိုးအစားကို ရွေးချယ်ပါ။"
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=main_menu()
+        )
+    elif call.data == "newButton":
+        bot.answer_callback_query(call.id, text=f"Creating the new Main Menu")
+        bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=None
+        )
+        message = "သိလိုသည့် အမျိုးအစားကို ရွေးချယ်ပါ။"
+        bot.send_message(
+            chat_id=call.message.chat.id,
             text=message,
             parse_mode="Markdown",
             reply_markup=main_menu()
