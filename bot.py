@@ -26,8 +26,15 @@ def echo_all(message):
 def main_menu():
     mainMenuButtons = [
         [InlineKeyboardButton("နိုင်ငံခြားငွေလဲလှယ်နှုန်းများ", callback_data="foreignExchangeRatesButton")],
-        [InlineKeyboardButton("စက်သုံးဆီဈေးနှုန်းများ", callback_data="fuelPricesButton")],
-        [InlineKeyboardButton("ရွှေဈေးနှုန်းများ", callback_data="goldPricesButton")]
+        [InlineKeyboardButton("စက်သုံးဆီဈေး", callback_data="fuelPricesButton"),
+         InlineKeyboardButton("စားသုံးဆီဈေး", callback_data="edibleOilPricesButton")],
+        [InlineKeyboardButton("ဆန်ဈေး", callback_data="ricePricesButton"),
+         InlineKeyboardButton("ရွှေဈေး", callback_data="goldPricesButton"),
+         InlineKeyboardButton("ပဲဈေး", callback_data="pulsesPricesButton")],
+        [InlineKeyboardButton("အသားဈေး", callback_data="meatPricesButton"),
+         InlineKeyboardButton("ငါးဈေး", callback_data="fishPricesButton"),
+         InlineKeyboardButton("ပုဇွန်ဈေး", callback_data="prawnPricesButton")],
+        [InlineKeyboardButton("ဟင်းခတ်အမွှေးအကြိုင်ဈေး", callback_data="spicesPricesButton")]
     ]
     return InlineKeyboardMarkup(mainMenuButtons)
 def back_menu():
@@ -111,6 +118,70 @@ def fetch_fuel_prices(division):
     except requests.exceptions.RequestException:
         return "Error connecting to the Fuel Prices service."
 
+def get_meat_prices():
+    rows = fetch_meat_fish_prawn_prices("meat")
+    message = "```text\n"
+    message += f"အသားဈေးနှုန်းများ\n\n{'အမျိုးအစား':<13} {'ဈေးနှုန်း'}\n{'-' * 19}\n"
+    for row in rows:
+        cols = [td.next.strip() for td in row.find_all('td')]
+        meatName = cols[1]
+        meatPrice = cols[-1]
+        formatted = "".join(meatName.split()[0])
+        translated = translator.get(formatted, formatted)
+        message += f"{translated:<12} {meatPrice}\n"
+    message += "```\n"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return message + now
+def get_fish_prices():
+    rows = fetch_meat_fish_prawn_prices("fish")
+    message = "```text\n"
+    message += f"ငါးဈေးနှုန်းများ\n\n{'အမျိုးအစား':<14} {'ဈေးနှုန်း'}\n{'-' * 20}\n"
+    for i, row in enumerate(rows):
+        cols = [td.next.strip() for td in row.find_all('td')]
+        fishName = cols[1]
+        fishPrice = cols[-1]
+        formatted = "".join(fishName.split()[0])
+        translated = translator.get(formatted, formatted)
+        paddings = [16, 16, 14, 16, 18]
+        message += f"{translated:<{paddings[i]}}{fishPrice}\n"
+    message += "```"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return message + now
+def get_prawn_prices():
+    rows = fetch_meat_fish_prawn_prices("prawn")
+    message = "```text\n"
+    message += f"ပုဇွန်ဈေးနှုန်းများ\n\n{'အမျိုးအစား':<14} {'ဈေးနှုန်း'}\n{'-' * 20}\n"
+    for i, row in enumerate(rows):
+        cols = [td.next.strip() for td in row.find_all('td')]
+        prawnName = cols[1]
+        prawnPrice = cols[-1]
+        formatted = "".join(prawnName.split()[0])
+        translated = translator.get(formatted, formatted)
+        paddings = [17, 18]
+        message += f"{translated:<{paddings[i]}}{prawnPrice}\n"
+    message += "```"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return message + now
+
+def fetch_meat_fish_prawn_prices(name: str):
+    try:
+        payload = {
+            "Category": "Fish and Prawn", "Page": "1", "Language": "English"
+        }
+        response = requests.post("https://csostat.gov.mm/Statistics/GetMarketPriceByCategory", data=payload, impersonate="chrome", timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        soup = BeautifulSoup(data, 'html.parser')
+        rows = soup.find_all('tr')
+
+        meatRows, fishRows, prawnRows = rows[:4], rows[4:9], rows[9:-1]
+        result = {
+            "meat": meatRows, "fish": fishRows, "prawn": prawnRows
+        }
+        return result[name]
+    except requests.exceptions.RequestException:
+        return "Error connecting to the Meat, Fish and Prawn Prices service."
+
 def get_gold_prices():
     url = os.getenv('GOLD_PRICES_API_URL')
     try:
@@ -175,6 +246,36 @@ def handle_query(call):
     elif call.data == "goldPricesButton":
         bot.answer_callback_query(call.id, text="Fetching the Gold Prices data")
         message = get_gold_prices()
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=back_menu()
+        )
+    elif call.data == "meatPricesButton":
+        bot.answer_callback_query(call.id, text="Fetching the Meat Prices data")
+        message = get_meat_prices()
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=back_menu()
+        )
+    elif call.data == "fishPricesButton":
+        bot.answer_callback_query(call.id, text="Fetching the Fish Prices data")
+        message = get_fish_prices()
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=back_menu()
+        )
+    elif call.data == "prawnPricesButton":
+        bot.answer_callback_query(call.id, text="Fetching the Prawn Prices data")
+        message = get_prawn_prices()
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
