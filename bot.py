@@ -265,6 +265,63 @@ def get_gold_prices():
     except requests.exceptions.RequestException:
         return "Error connecting to the Gold Prices service."
 
+def get_pulses_prices():
+    rows = fetch_pulses_prices()
+    message = "```text\n"
+    message += f"ပဲဈေးနှုန်းများ\n\n{'အမျိုးအစား':<13} {'ဈေးနှုန်း'}\n{'-' * 19}\n"
+    for i, row in enumerate(rows):
+        cols = [td.next.strip() for td in row.find_all('td')]
+        pulsesName = cols[1]
+        pulsesPrice = cols[-1]
+        formatted = "".join(pulsesName.split()[0])
+        translated = translator.get(formatted, formatted)
+        paddings = [14, 14, 15, 15]
+        message += f"{translated:<{paddings[i]}}{pulsesPrice}\n"
+    message += "```\n"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return message + now
+def fetch_pulses_prices():
+    try:
+        payload = {
+            "Category": "Pulses", "Page": "1", "Language": "English"
+        }
+        response = requests.post("https://csostat.gov.mm/Statistics/GetMarketPriceByCategory", data=payload, impersonate="chrome", timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        soup = BeautifulSoup(data, 'html.parser')
+        rows = soup.find_all('tr')
+        return rows[:-1]
+    except requests.exceptions.RequestException:
+        return "Error connecting to the Pulses Prices service."
+def get_spices_prices():
+    rows = fetch_spices_prices()
+    message = "```text\n"
+    message += f"ဟင်းခတ်အမွှေးအကြိုင်ဈေးနှုန်းများ\n\n{'အမျိုးအစား':<17} {'ဈေးနှုန်း'}\n{'-' * 23}\n"
+    for i, row in enumerate(rows):
+        cols = [td.next.strip() for td in row.find_all('td')]
+        spicesName = cols[1]
+        spicesPrice = cols[-1]
+        formatted = "".join(spicesName.split()[0])
+        translated = translator.get(formatted, formatted)
+        paddings = [20, 19, 20, 18]
+        message += f"{translated:<{paddings[i]}}{spicesPrice}\n"
+    message += "```\n"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return message + now
+def fetch_spices_prices():
+    try:
+        payload = {
+            "Category": "Spices", "Page": "1", "Language": "English"
+        }
+        response = requests.post("https://csostat.gov.mm/Statistics/GetMarketPriceByCategory", data=payload, impersonate="chrome", timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        soup = BeautifulSoup(data, 'html.parser')
+        rows = soup.find_all('tr')
+        return rows[:-1]
+    except requests.exceptions.RequestException:
+        return "Error connecting to the Spices Prices service."
+
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     if call.data == "foreignExchangeRatesButton":
@@ -351,6 +408,26 @@ def handle_query(call):
     elif call.data == "edibleOilPricesButton":
         bot.answer_callback_query(call.id, text="Fetching the Edible Oil Prices data")
         message = get_edible_oil_prices()
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=back_menu()
+        )
+    elif call.data == "pulsesPricesButton":
+        bot.answer_callback_query(call.id, text="Fetching the Pulses Prices data")
+        message = get_pulses_prices()
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=back_menu()
+        )
+    elif call.data == "spicesPricesButton":
+        bot.answer_callback_query(call.id, text="Fetching the Spices Prices data")
+        message = get_spices_prices()
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
