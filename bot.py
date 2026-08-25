@@ -118,6 +118,61 @@ def fetch_fuel_prices(division):
     except requests.exceptions.RequestException:
         return "Error connecting to the Fuel Prices service."
 
+def get_rice_prices():
+    rows = fetch_rice_prices()
+    message = "```text\n"
+    message += f"ဆန်ဈေးနှုန်းများ\n\n{'အမျိုးအစား':<14} {'ဈေးနှုန်း'}\n{'-' * 20}\n"
+    for i, row in enumerate(rows):
+        cols = [td.next.strip() for td in row.find_all('td')]
+        riceName = cols[1]
+        ricePrice = cols[-1]
+        translated = translator.get(riceName, riceName)
+        paddings = [15, 20]
+        message += f"{translated:<{paddings[i]}}{ricePrice}\n"
+    message += "```\n"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return message + now
+def fetch_rice_prices():
+    try:
+        payload = {
+            "Category": "Rice", "Page": "1", "Language": "English"
+        }
+        response = requests.post("https://csostat.gov.mm/Statistics/GetMarketPriceByCategory", data=payload, impersonate="chrome", timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        soup = BeautifulSoup(data, 'html.parser')
+        rows = soup.find_all('tr')
+        return rows[:-1]
+    except requests.exceptions.RequestException:
+        return "Error connecting to the Rice Prices service."
+def get_edible_oil_prices():
+    rows = fetch_edible_oil_prices()
+    message = "```text\n"
+    message += f"စားသုံးဆီဈေးနှုန်းများ\n\n{'အမျိုးအစား':<19} {'ဈေးနှုန်း'}\n{'-' * 25}\n"
+    for i, row in enumerate(rows):
+        cols = [td.next.strip() for td in row.find_all('td')]
+        edibleOilName = cols[1]
+        edibleOilPrice = cols[-1]
+        translated = translator.get(edibleOilName, edibleOilName)
+        paddings = [21, 21, 22, 22]
+        message += f"{translated:<{paddings[i]}}{edibleOilPrice}\n"
+    message += "```\n"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return message + now
+def fetch_edible_oil_prices():
+    try:
+        payload = {
+            "Category": "Edible Oil", "Page": "1", "Language": "English"
+        }
+        response = requests.post("https://csostat.gov.mm/Statistics/GetMarketPriceByCategory", data=payload, impersonate="chrome", timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        soup = BeautifulSoup(data, 'html.parser')
+        rows = soup.find_all('tr')
+        return rows[:-1]
+    except requests.exceptions.RequestException:
+        return "Error connecting to the Edible Oil Prices service."
+
 def get_meat_prices():
     rows = fetch_meat_fish_prawn_prices("meat")
     message = "```text\n"
@@ -276,6 +331,26 @@ def handle_query(call):
     elif call.data == "prawnPricesButton":
         bot.answer_callback_query(call.id, text="Fetching the Prawn Prices data")
         message = get_prawn_prices()
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=back_menu()
+        )
+    elif call.data == "ricePricesButton":
+        bot.answer_callback_query(call.id, text="Fetching the Rice Prices data")
+        message = get_rice_prices()
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=back_menu()
+        )
+    elif call.data == "edibleOilPricesButton":
+        bot.answer_callback_query(call.id, text="Fetching the Edible Oil Prices data")
+        message = get_edible_oil_prices()
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
