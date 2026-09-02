@@ -10,8 +10,8 @@ import json
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path)
-with open('translator.json', "r", encoding="utf-8") as f:
-    translator = json.load(f)
+with open('trans.json', "r", encoding="utf-8") as f:
+    trans = json.load(f)
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -46,13 +46,20 @@ def back_menu():
 def fuel_prices_menu():
     markup = InlineKeyboardMarkup()
     divisions = ["Yangon Division", "Bago Division", "Nay Pyi Taw Division", "Ayeyarwady Division", "Kayin State", "Mon State", "Mandalay Division", "Magwe Division", "Shan State"]
-    divisionButtons = [InlineKeyboardButton(translator.get(" ".join(division.split()[:-1]), division), callback_data=division) for division in divisions]
+    divisionButtons = [InlineKeyboardButton(trans.get(" ".join(division.split()[:-1]), division), callback_data=division) for division in divisions]
     for i in range(0, len(divisionButtons), 3):
         markup.row(*divisionButtons[i:i+3])
     backButton = InlineKeyboardButton("မူလစာမျက်နှာသို့", callback_data="backButton")
     markup.row(backButton)
     return markup
 
+def get_price_change_indicator(now: str, previous: list):
+    now, difference = int(now), 0
+    for i in previous:
+        i = int(i)
+        if abs(now - i) > abs(difference):
+            difference = now - i
+    return "" if difference == 0 else f"(+{difference})" if difference > 0 else f"(-{abs(difference)})"
 def get_foreign_exchange_rates():
     url = os.getenv('FOREIGN_EXCHANGE_RATES_API_URL')
     try:
@@ -66,7 +73,7 @@ def get_foreign_exchange_rates():
         rates = data["rates"]
         USDToMMK = rates.get('MMK', 0)
         targets = ["USD", "EUR", "SGD", "MYR", "CNY", "THB", "JPY"]
-        bodyMessage = f"```text\nနိုင်ငံခြားငွေလဲလှယ်နှုန်းများ\n\n{'ငွေကြေး':<12} {'ဈေးနှုန်း'}\n{'-' * 20}\n"
+        bodyMessage = f"```text\nနိုင်ငံခြားငွေလဲလှယ်နှုန်းများ\n\n{'Currency':<12}{'Rates'}\n{'*':<12}*\n"
 
         for target in targets:
             if target == "USD":
@@ -74,7 +81,7 @@ def get_foreign_exchange_rates():
             else:
                 rateInUSD = rates.get(target)
                 MMK = (USDToMMK / rateInUSD) if rateInUSD else 0
-            bodyMessage += f"{translator.get(target, target):<11} {MMK:,.2f}\n"
+            bodyMessage += f"{trans.get(target, target):<12}{MMK:,.2f}\n"
 
         bodyMessage += "```\n"
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -87,8 +94,8 @@ def get_foreign_exchange_rates():
 def get_fuel_prices(division):
     data = fetch_fuel_prices(division)
     message = "```text\n"
-    message += f"{translator.get(division, division)}\n\nစက်သုံးဆီဈေးနှုန်းများ\n{'-' * 23}\n"
-    message += f"{'Diesel':<18} {data['diesel']}\n{'Premium Diesel':<18} {data['premiumDiesel']}\n{'Octane 92':<18} {data['octane92']}\n{'Octane 95':<18} {data['octane95']}\n\n"
+    message += f"{trans.get(division, division)}\n\nစက်သုံးဆီဈေးနှုန်းများ\n*\n"
+    message += f"{'Diesel':<19}{data['diesel']}\n{'Premium Diesel':<19}{data['premiumDiesel']}\n{'Octane 92':<19}{data['octane92']}\n{'Octane 95':<19}{data['octane95']}\n\n"
     message += "```\n"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return message + now
@@ -121,14 +128,13 @@ def fetch_fuel_prices(division):
 def get_rice_prices():
     rows = fetch_rice_prices()
     message = "```text\n"
-    message += f"ဆန်ဈေးနှုန်းများ\n\n{'အမျိုးအစား':<14} {'ဈေးနှုန်း'}\n{'-' * 20}\n"
-    for i, row in enumerate(rows):
+    message += f"ဆန်ဈေးနှုန်းများ\n\n{'Price':<15}{'Type'}\n{'*':<15}*\n"
+    for row in rows:
         cols = [td.next.strip() for td in row.find_all('td')]
         riceName = cols[1]
         ricePrice = cols[-1]
-        translated = translator.get(riceName, riceName)
-        paddings = [15, 20]
-        message += f"{translated:<{paddings[i]}}{ricePrice}\n"
+        translated = trans.get(riceName, riceName)
+        message += f"{ricePrice+get_price_change_indicator(cols[-1], cols[2:-1]):<15}{translated}\n"
     message += "```\n"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return message + now
@@ -148,14 +154,13 @@ def fetch_rice_prices():
 def get_edible_oil_prices():
     rows = fetch_edible_oil_prices()
     message = "```text\n"
-    message += f"စားသုံးဆီဈေးနှုန်းများ\n\n{'အမျိုးအစား':<19} {'ဈေးနှုန်း'}\n{'-' * 25}\n"
-    for i, row in enumerate(rows):
+    message += f"စားသုံးဆီဈေးနှုန်းများ\n\n{'Price':<15}{'Type'}\n{'*':<15}*\n"
+    for row in rows:
         cols = [td.next.strip() for td in row.find_all('td')]
         edibleOilName = cols[1]
         edibleOilPrice = cols[-1]
-        translated = translator.get(edibleOilName, edibleOilName)
-        paddings = [21, 21, 22, 22]
-        message += f"{translated:<{paddings[i]}}{edibleOilPrice}\n"
+        translated = trans.get(edibleOilName, edibleOilName)
+        message += f"{edibleOilPrice+get_price_change_indicator(cols[-1], cols[2:-1]):<15}{translated}\n"
     message += "```\n"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return message + now
@@ -176,44 +181,42 @@ def fetch_edible_oil_prices():
 def get_meat_prices():
     rows = fetch_meat_fish_prawn_prices("meat")
     message = "```text\n"
-    message += f"အသားဈေးနှုန်းများ\n\n{'အမျိုးအစား':<13} {'ဈေးနှုန်း'}\n{'-' * 19}\n"
+    message += f"အသားဈေးနှုန်းများ\n\n{'Price':<15}{'Type'}\n{'*':<15}*\n"
     for row in rows:
         cols = [td.next.strip() for td in row.find_all('td')]
         meatName = cols[1]
         meatPrice = cols[-1]
         formatted = "".join(meatName.split()[0])
-        translated = translator.get(formatted, formatted)
-        message += f"{translated:<12} {meatPrice}\n"
+        translated = trans.get(formatted, formatted)
+        message += f"{meatPrice+get_price_change_indicator(cols[-1], cols[2:-1]):<15}{translated}\n"
     message += "```\n"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return message + now
 def get_fish_prices():
     rows = fetch_meat_fish_prawn_prices("fish")
     message = "```text\n"
-    message += f"ငါးဈေးနှုန်းများ\n\n{'အမျိုးအစား':<14} {'ဈေးနှုန်း'}\n{'-' * 20}\n"
-    for i, row in enumerate(rows):
+    message += f"ငါးဈေးနှုန်းများ\n\n{'Price':<15}{'Type'}\n{'*':<15}*\n"
+    for row in rows:
         cols = [td.next.strip() for td in row.find_all('td')]
         fishName = cols[1]
         fishPrice = cols[-1]
         formatted = "".join(fishName.split()[0])
-        translated = translator.get(formatted, formatted)
-        paddings = [16, 16, 14, 16, 18]
-        message += f"{translated:<{paddings[i]}}{fishPrice}\n"
+        translated = trans.get(formatted, formatted)
+        message += f"{fishPrice+get_price_change_indicator(cols[-1], cols[2:-1]):<15}{translated}\n"
     message += "```"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return message + now
 def get_prawn_prices():
     rows = fetch_meat_fish_prawn_prices("prawn")
     message = "```text\n"
-    message += f"ပုဇွန်ဈေးနှုန်းများ\n\n{'အမျိုးအစား':<14} {'ဈေးနှုန်း'}\n{'-' * 20}\n"
-    for i, row in enumerate(rows):
+    message += f"ပုဇွန်ဈေးနှုန်းများ\n\n{'Price':<15}{'Type'}\n{'*':<15}*\n"
+    for row in rows:
         cols = [td.next.strip() for td in row.find_all('td')]
         prawnName = cols[1]
         prawnPrice = cols[-1]
         formatted = "".join(prawnName.split()[0])
-        translated = translator.get(formatted, formatted)
-        paddings = [17, 18]
-        message += f"{translated:<{paddings[i]}}{prawnPrice}\n"
+        translated = trans.get(formatted, formatted)
+        message += f"{prawnPrice+get_price_change_indicator(cols[-1], cols[2:-1]):<15}{translated}\n"
     message += "```"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return message + now
@@ -256,9 +259,9 @@ def get_gold_prices():
         tbodyCols = [td.next.strip() for td in tbodyRow.find_all('td')]
 
         message = "```text\n"
-        message += f"ရွှေဈေးနှုန်းများ\n\n{'ရက်စွဲ':<11} {'အခေါက်ရွှေ':<14} {'၁၅ပဲရည်'}\n{'-' * 33}\n"
+        message += f"ရွှေဈေးနှုန်းများ\n\n{'Date':<10} {'16 PE':<14} {'15 PE'}\n{'*':<11}{'*':<15}*\n"
         for i, col in enumerate(tbodyCols[:1:-1]):
-            message += f"{"-".join(theadCols[:1:-1][i].split("-")[:-1]):<9} {int(col):<13,.0f} {(int(col) * (15 / 16)):,.0f}\n"
+            message += f"{'-'.join(theadCols[:1:-1][i].split('-')[:-1]):<10} {int(col):<14,.0f} {(int(col) * (15 / 16)):,.0f}\n"
         message += "```\n"
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return message + now
@@ -268,15 +271,14 @@ def get_gold_prices():
 def get_pulses_prices():
     rows = fetch_pulses_prices()
     message = "```text\n"
-    message += f"ပဲဈေးနှုန်းများ\n\n{'အမျိုးအစား':<13} {'ဈေးနှုန်း'}\n{'-' * 19}\n"
-    for i, row in enumerate(rows):
+    message += f"ပဲဈေးနှုန်းများ\n\n{'Price':<15}{'Type'}\n{'*':<15}*\n"
+    for row in rows:
         cols = [td.next.strip() for td in row.find_all('td')]
         pulsesName = cols[1]
         pulsesPrice = cols[-1]
         formatted = "".join(pulsesName.split()[0])
-        translated = translator.get(formatted, formatted)
-        paddings = [14, 14, 15, 15]
-        message += f"{translated:<{paddings[i]}}{pulsesPrice}\n"
+        translated = trans.get(formatted, formatted)
+        message += f"{pulsesPrice+get_price_change_indicator(cols[-1], cols[2:-1]):<15}{translated}\n"
     message += "```\n"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return message + now
@@ -296,15 +298,14 @@ def fetch_pulses_prices():
 def get_spices_prices():
     rows = fetch_spices_prices()
     message = "```text\n"
-    message += f"ဟင်းခတ်အမွှေးအကြိုင်ဈေးနှုန်းများ\n\n{'အမျိုးအစား':<17} {'ဈေးနှုန်း'}\n{'-' * 23}\n"
-    for i, row in enumerate(rows):
+    message += f"ဟင်းခတ်အမွှေးအကြိုင်ဈေးနှုန်းများ\n\n{'Price':<15}{'Type'}\n{'*':<15}*\n"
+    for row in rows:
         cols = [td.next.strip() for td in row.find_all('td')]
         spicesName = cols[1]
         spicesPrice = cols[-1]
         formatted = "".join(spicesName.split()[0])
-        translated = translator.get(formatted, formatted)
-        paddings = [20, 19, 20, 18]
-        message += f"{translated:<{paddings[i]}}{spicesPrice}\n"
+        translated = trans.get(formatted, formatted)
+        message += f"{spicesPrice+get_price_change_indicator(cols[-1], cols[2:-1]):<15}{translated}\n"
     message += "```\n"
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return message + now
