@@ -1,4 +1,0 @@
-pyTelegramBotAPI
-python-dotenv
-curl-cffi
-beautifulsoup4

@@ -1,0 +1,16 @@
+[project]
+name = "zaykwat-bot"
+version = "0.1.0"
+description = "Telegram bot for real-time scraping of data, ranging from day-to-day grocery prices to foreign exchange rates."
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi[standard]",
+    "pyTelegramBotAPI",
+    "aiohttp",
+    "python-dotenv",
+    "curl-cffi",
+    "beautifulsoup4"
+]
+
+[tool.fastapi]
+entrypoint = "main:app"
