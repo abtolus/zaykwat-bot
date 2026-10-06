@@ -1,0 +1,6 @@
+fastapi[standard]
+pyTelegramBotAPI
+aiohttp
+python-dotenv
+curl-cffi
+beautifulsoup4

@@ -4,11 +4,11 @@ from pathlib import Path
 from datetime import datetime
 from bs4 import BeautifulSoup
 from typing import Callable, Optional
-from contextlib import asynccontextmanager
 from dotenv import find_dotenv, load_dotenv
 from curl_cffi.requests import AsyncSession
 from fastapi import FastAPI, Request, Response
 from telebot.async_telebot import AsyncTeleBot
+from datetime import datetime, timedelta, timezone
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Update
 
 try: from curl_cffi.requests.exceptions import RequestException as CurlRequestError
@@ -26,7 +26,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(name="zaykwat-bot")
 
-DIRECTORY = Path(__file__).resolve().parent
+DIRECTORY = Path(__file__).resolve().parent.parent
+MYANMAR_TIMEZONE = timezone(timedelta(hours=6, minutes=30))
 
 load_dotenv(find_dotenv())
 
@@ -39,16 +40,15 @@ def require_env(name: str) -> str:
     return value
 
 BOT_TOKEN = require_env('BOT_TOKEN')
-FASTAPI_WEBHOOK_URL = require_env('FASTAPI_WEBHOOK_URL')
 FOREIGN_EXCHANGE_RATES_API_URL = require_env('FOREIGN_EXCHANGE_RATES_API_URL')
 FUEL_PRICES_API_URL = require_env('FUEL_PRICES_API_URL')
 GOLD_PRICES_API_URL = require_env('GOLD_PRICES_API_URL')
+WEBHOOK_SECRET = require_env("WEBHOOK_SECRET")
 
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET") or None
 MARKET_PRICES_API_URL = os.getenv('MARKET_PRICES_API_URL')
 
 try:
-    with open(DIRECTORY / "translations.json", "r", encoding="utf-8") as f:
+    with open(DIRECTORY / "assets/translations.json", "r", encoding="utf-8") as f:
         translations: dict[str, str] = json.load(f)
 except (OSError, json.JSONDecodeError) as e:
     raise RuntimeError(f"Could not load translations.json: {e}") from e
@@ -58,10 +58,18 @@ class ServiceError(Exception):
 
 bot = AsyncTeleBot(BOT_TOKEN)
 http_session: Optional[AsyncSession] = None
+session_loop: Optional[asyncio.AbstractEventLoop] = None
+
+async def ensure_session() -> None:
+    global http_session
+    loop = asyncio.get_running_loop()
+    if http_session is None or session_loop is not loop:
+        http_session = AsyncSession()
+        session_loop = loop
 
 def get_session() -> AsyncSession:
     if http_session is None:
-        raise RuntimeError("HTTP session cannot be initialised")
+        raise RuntimeError("ensure_session() has not run yet.")
     return http_session
 
 main_menu_text: str = "သိလိုသည့် အမျိုးအစားကို ရွေးချယ်ပါ။"
@@ -125,14 +133,14 @@ async def echo_all(message) -> None:
         reply_markup=main_menu)
 
 def get_timestamp() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(MYANMAR_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
 
 def get_price_change_indicator(now: str, previous: list[str]) -> str:
     now, difference = int(now.replace(',', '')), 0
     for raw in previous:
         value = int(raw.replace(',', ''))
         if abs(now - value) > abs(difference):
-            difference = now - raw
+            difference = now - value
     if difference == 0: return ""
     return f"(+{difference})" if difference > 0 else f"(-{abs(difference)})"
 
@@ -365,76 +373,26 @@ async def handle_query(call) -> None:
         try: await bot.answer_callback_query(call.id, text="Something went wrong. Please try again.")
         except Exception: logger.exception("Failed to even answer the callback query for data=%r", data)
 
-background_tasks: set[asyncio.Task] = set()
-
-def get_track(task: asyncio.Task) -> None:
-    background_tasks.add(task)
-    task.add_done_callback(background_tasks.discard)
-
 async def process_update_safely(update: Update) -> None:
     try: await bot.process_new_updates([update])
-    except Exception: logger.exception("Error while processing a Telegram update")
+    except Exception: logger.exception("Error while processing a Telegram update.")
 
-async def setup_webhook(webhook_url: str, maximum: int = 3) -> None:
-    for attempt in range(1, maximum + 1):
-        start = asyncio.get_running_loop().time()
-        try:
-            if WEBHOOK_SECRET: await bot.set_webhook(url=webhook_url, secret_token=WEBHOOK_SECRET, timeout=30)
-            else: await bot.set_webhook(url=webhook_url, timeout=30)
-            logger.info(
-                "Webhook set to %s on attempt %d (%.1fs)",
-                webhook_url, attempt, asyncio.get_running_loop().time() - start,
-            )
-            return
-        except Exception:
-            elapsed = asyncio.get_running_loop().time() - start
-            logger.warning(
-                "set_webhook attempt %d/%d failed after %.1fs",
-                attempt, maximum, elapsed, exc_info=True,
-            )
-            if attempt == maximum:
-                logger.error("Giving up on setting the webhook after %d attempts", attempt)
-                return
-            await asyncio.sleep(attempt * 3)
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global http_session
-    http_session = AsyncSession()
-    webhook_url = f"{FASTAPI_WEBHOOK_URL}/webhook"
-
-    get_track(asyncio.create_task(setup_webhook(webhook_url)))
-
-    try:
-        yield
-    finally:
-        await bot.remove_webhook()
-        await bot.close_session()
-        await http_session.close()
-        for task in list(background_tasks):
-            task.cancel()
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 @app.post("/webhook")
 async def handle_webhook(request: Request) -> Response:
-    if WEBHOOK_SECRET:
-        provided = request.headers.get("x-telegram-bot-api-secret-token", "")
-        if not secrets.compare_digest(provided, WEBHOOK_SECRET): return Response(status_code=403)
+    token = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if not WEBHOOK_SECRET or not secrets.compare_digest(token.encode(), WEBHOOK_SECRET.encode()):
+        return Response(status_code=403)
 
     content_type = request.headers.get("content-type", "")
     if not content_type.startswith("application/json"): return Response(status_code=403)
 
     try: json_data = await request.json()
     except Exception: return Response(status_code=400)
+
+    await ensure_session()
+
     update = Update.de_json(json_data)
-    get_track(asyncio.create_task(process_update_safely(update)))
-    return Response(status_code=200)
-
-@app.get("/")
-async def handle_get():
-    return {"status": "ok"}
-
-@app.head('/')
-async def handle_head() -> Response:
+    await process_update_safely(update)
     return Response(status_code=200)
